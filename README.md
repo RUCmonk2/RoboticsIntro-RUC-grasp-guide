@@ -1,8 +1,10 @@
-# RoboticsIntro-RUC · MuJoCo
+# RoboticsIntro-RUC · 键盘遥操与抓取引导
 
 中国人民大学《机器人导论》课程配套实验：**第六周“仿真平台”、第七周“机械臂抓取实践”、第十一周“键盘遥操作”**。本分支使用原生 MuJoCo，默认机器人是 Franka Panda。SO100 的本地 URDF、网格和许可证用于模型导入实验。
 
-![Panda 仿真场景](docs/images/baseline.png)
+这个分支以[第十一周课程仓库](https://github.com/NamelessCrew/RoboticsIntro-RUC/tree/week11-keyboard-teleop)为基础。抓头旁常驻标出六个平移方向，右上角显示到红方块抓取点的坐标差，窗口顶部提示按住、点按或松开哪个键。
+
+![Panda 键盘遥操窗口，顶部高亮 HOLD W，右上角显示抓取坐标差](docs/images/week11-grasp-guide.png)
 
 课程入口：[第六周教程](docs/week06.md) · [第七周教程](docs/week07.md) · [第十一周键盘遥操作](chapters/week11/README.md) · [第七周 40 页课件文字稿](docs/week07-slides.md) · [迁移计划与教材对照](docs/migration-plan.md) · [验证记录](docs/validation.md) · [第十一周全新安装验收](docs/week11-validation.md)。
 
@@ -11,8 +13,8 @@
 先安装 **64 位 Python 3.11 或 3.12** 和 Git。首次安装需要联网下载依赖；打开窗口需要本机桌面与可用的 OpenGL 驱动。模型已包含在仓库中，无需另外安装 Isaac Lab、ROS、CUDA 或下载权重。
 
 ```bash
-git clone --branch week11-keyboard-teleop --single-branch https://github.com/NamelessCrew/RoboticsIntro-RUC.git
-cd RoboticsIntro-RUC
+git clone --branch week11-grasp-guide --single-branch https://github.com/RUCmonk2/RoboticsIntro-RUC-grasp-guide.git
+cd RoboticsIntro-RUC-grasp-guide
 ```
 
 然后只选择自己系统对应的一组命令：
@@ -44,8 +46,8 @@ bash run.sh teleop --human
 下载本分支（ZIP 请在 GitHub 切到该分支后下载）：
 
 ```text
-git clone --branch week11-keyboard-teleop https://github.com/NamelessCrew/RoboticsIntro-RUC.git
-cd RoboticsIntro-RUC
+git clone --branch week11-grasp-guide --single-branch https://github.com/RUCmonk2/RoboticsIntro-RUC-grasp-guide.git
+cd RoboticsIntro-RUC-grasp-guide
 ```
 
 模型随仓库提供，运行实验无需另行下载模型或权重。

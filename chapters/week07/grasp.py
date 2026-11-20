@@ -17,6 +17,9 @@ from .live_viewer import LiveViewer, ViewerClosed
 from .video import TaskVideo
 
 
+GRASP_TCP_HEIGHT_OFFSET = .003  # TCP 抓取点在方块中心上方 3 mm。
+
+
 def make_env(cube_xy=(.45, 0), cube_friction=1.):
     return RobotEnv(add_cube=True, cube_position=(*cube_xy, .0201), cube_friction=cube_friction,
                     sensor_resolution=(320, 240), camera_eye=(.45, 0, .85),
@@ -146,7 +149,7 @@ def _run_task(mode, output, render, cube_xy, release_check, close_gripper, human
                 raise AssertionError(f"tracking error {error:.4f} m")
 
         approach = position + [0, 0, .16]
-        grasp = position + [0, 0, .003]
+        grasp = position + [0, 0, GRASP_TCP_HEIGHT_OFFSET]
         lift = grasp + [0, 0, .12]
         move("approach", approach, True)
         stage_image("02_approach")

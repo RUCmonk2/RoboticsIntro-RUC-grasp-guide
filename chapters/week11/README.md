@@ -7,8 +7,8 @@
 先安装 64 位 Python 3.11 或 3.12 和 Git。首次安装需联网；交互窗口需要桌面环境与 OpenGL 驱动。模型已随仓库提供。
 
 ```bash
-git clone --branch week11-keyboard-teleop --single-branch https://github.com/NamelessCrew/RoboticsIntro-RUC.git
-cd RoboticsIntro-RUC
+git clone --branch week11-grasp-guide --single-branch https://github.com/RUCmonk2/RoboticsIntro-RUC-grasp-guide.git
+cd RoboticsIntro-RUC-grasp-guide
 ```
 
 在仓库根目录执行下面对应系统的命令。已安装环境时可跳过第一行；无需激活虚拟环境。
@@ -30,6 +30,10 @@ bash run.sh teleop --human
 ```
 
 点击仿真窗口取得焦点。按住 **A** 约半秒再松手，观察窗口左上角的末端位置 `TCP (m)`。第二个数是世界坐标下的 Y，A 增大 Y，D 减小 Y。松手后位移会继续增加一小段，等读数稳定再比较起点和终点。方向固定在世界坐标系中，与画面里的左右分别定义。
+
+抓头旁常驻显示 `W/S`、`A/D`、`Q/E` 六个平移方向。每组颜色对应一个起始姿态下的主要关节示例，`W/S` 对应 `J2`，`A/D` 对应 `J3`，`Q/E` 对应 `J4`。按键设置的是抓头的平移方向，实际运动由逆运动学协调多个关节完成。
+
+右上角的 `Grasp gap (mm)` 是抓取点减去当前抓头位置的世界坐标差，单位为毫米。抓取点在红方块中心上方 3 mm。窗口顶部的黄色提示显示下一步操作，抓头旁对应的方向箭头也会加粗。`HOLD` 表示按住，`TAP` 表示点按，橙色的 `RELEASE` 表示先松手等抓头减速。水平对准并下降到位后，点按 K 夹取。
 
 `--check` 全部通过后，终端应报告六方向、组合键、三轴旋转及夹爪开合通过，并生成下文的 CSV。检查通过后再打开 `--human`。需要单独核对图形环境时，将 `--human` 换成 `--smoke-test`，窗口渲染约两秒后自动关闭。
 

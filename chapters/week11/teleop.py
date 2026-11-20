@@ -9,8 +9,9 @@ import glfw
 import mujoco
 import numpy as np
 
-from chapters.week07.controller import CartesianController, orientation_error
-from chapters.week07.grasp import make_env
+from chapters.week07.controller import CartesianController, bilateral_contacts, orientation_error
+from chapters.week07.grasp import GRASP_TCP_HEIGHT_OFFSET, make_env
+from .motion_overlay import draw_grasp_cue, draw_translation_guide
 
 
 # 键名与 GLFW 常量对应；方向分量依次为世界坐标 X、Y、Z。
@@ -31,6 +32,10 @@ RELEASE_DECAY = 0.9  # 每个 50 Hz 控制周期
 STOP_SPEED = 0.001  # m/s
 MAX_RISE = 0.12  # m，相对起点的抬升上限
 MIN_Z = 0.02  # m，限制末端目标高度；整臂碰撞仍由仿真处理
+GRASP_XY_TOL = .006  # m
+GRASP_Z_TOL = .008  # m
+GRASP_CLEARANCE = .060  # m，相对方块中心的横移准备高度
+GRIP_CHECK_DELAY = .35  # s，给夹爪闭合及接触稳定留出时间
 
 
 def read_direction(is_down, mapping=KEY_DIRECTIONS):
@@ -57,6 +62,7 @@ class PandaTeleop:
         self.velocity = np.zeros(3)
         self.gripper_open = True
         self.gripper_key_was_down = False
+        self.gripper_closed_at = -np.inf
 
     def step(self, direction, gripper_key_down=False, *, angular_direction=None, clear=False):
         if clear:
@@ -70,6 +76,8 @@ class PandaTeleop:
         pressed_now = gripper_key_down and not was_down
         if pressed_now:
             self.gripper_open = not self.gripper_open
+            if not self.gripper_open:
+                self.gripper_closed_at = self.env.data.time
         self.gripper_key_was_down = gripper_key_down
 
         # 1. 从方向更新指令速度；松开后逐周期衰减。
@@ -119,13 +127,66 @@ class PandaTeleop:
             self.rotation = rotation
 
 
+def key_for_axis(axis, direction):
+    return next(key for key, vector in KEY_DIRECTIONS.items() if vector[axis] * direction > 0)
+
+
+def grasp_guidance(teleop):
+    """用当前抓头与方块的位置给出一条键盘提示。"""
+    env = teleop.env
+    tcp, cube = env.tcp_xyz, env.cube_xyz
+    gap = cube + [0, 0, GRASP_TCP_HEIGHT_OFFSET] - tcp
+
+    if not teleop.gripper_open:
+        held, _ = bilateral_contacts(env)
+        if not held:
+            if env.data.time - teleop.gripper_closed_at < GRIP_CHECK_DELAY:
+                return gap, "CLOSING", None, ""
+            return gap, "TAP", "K", "Reopen gripper to retry"
+        if cube[2] - env.model.geom("cube_geom").size[2] >= .06:
+            return gap, "LIFTED", None, ""
+        return gap, "HOLD", "Q", "Lift cube"
+
+    moving_axis = int(np.argmax(np.abs(teleop.velocity)))
+    speed = teleop.velocity[moving_axis]
+    horizontal_axis = int(np.argmax(np.abs(gap[:2])))
+    # 正朝目标横移时先完成当前轴，避免两个误差接近时来回换键。
+    if moving_axis < 2 and abs(gap[moving_axis]) > GRASP_XY_TOL and speed * gap[moving_axis] > 0:
+        horizontal_axis = moving_axis
+    clearance_gap = cube[2] + GRASP_CLEARANCE - tcp[2]
+    if abs(gap[horizontal_axis]) <= GRASP_XY_TOL:
+        axis, distance, tolerance = 2, gap[2], GRASP_Z_TOL
+        detail = "Lower to cube" if distance < 0 else "Adjust height"
+    elif clearance_gap > GRASP_Z_TOL:
+        axis, distance, tolerance = 2, clearance_gap, GRASP_Z_TOL
+        detail = "Raise before sliding"
+    else:
+        axis, distance, tolerance = horizontal_axis, gap[horizontal_axis], GRASP_XY_TOL
+        detail = "Align over cube"
+
+    key = key_for_axis(axis, distance) if abs(distance) > tolerance else None
+    if abs(speed) >= STOP_SPEED:
+        moving_key = key_for_axis(moving_axis, speed)
+        # 预计松键后速度衰减的剩余位移，并计入 TCP 比目标落后的距离。
+        braking_distance = teleop.velocity[axis] * teleop.dt * RELEASE_DECAY / (1 - RELEASE_DECAY)
+        stop_target = teleop.target[axis] + braking_distance
+        remaining = distance - (stop_target - tcp[axis])
+        if moving_key != key or np.sign(distance) * remaining <= tolerance:
+            return gap, "RELEASE", moving_key, "Let arm settle"
+
+    if key is None:
+        return gap, "TAP", "K", "Close gripper"
+    action = "TAP" if abs(distance) < .025 else "HOLD"
+    return gap, action, key, detail
+
+
 def run_window(teleop, *, duration=None):
     """GLFW 提供持续的按键状态，MuJoCo 渲染同一个仿真场景。"""
     if not glfw.init():
         raise RuntimeError("无法初始化 GLFW，请在桌面会话中运行。")
     context = None
     try:
-        window = glfw.create_window(960, 640, "Panda Keyboard Teleoperation", None, None)
+        window = glfw.create_window(960, 640, "Panda Keyboard Teleoperation - Grasp Guide", None, None)
         if not window:
             raise RuntimeError("无法创建 MuJoCo 遥操窗口。")
         glfw.make_context_current(window)
@@ -138,7 +199,7 @@ def run_window(teleop, *, duration=None):
         option = mujoco.MjvOption()
         option.geomgroup[3] = 0
         scene = mujoco.MjvScene(model, maxgeom=2000)
-        context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150)
+        context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_200)
 
         print("点击窗口后操作：W/S、A/D、Q/E 平移；Z/X、T/G、C/V 旋转；K 开合；R 清指令；Esc 退出。", flush=True)
 
@@ -188,14 +249,22 @@ def run_window(teleop, *, duration=None):
                 viewport = mujoco.MjrRect(0, 0, width, height)
                 mujoco.mjv_updateScene(model, data, option, None, camera,
                                        mujoco.mjtCatBit.mjCAT_ALL, scene)
+                gap, action, key, detail = grasp_guidance(teleop)
+                draw_translation_guide(scene, teleop.env, KEY_DIRECTIONS, key if action in ("HOLD", "TAP") else None)
                 mujoco.mjr_render(viewport, scene, context)
                 x, y, z = teleop.env.tcp_xyz
                 gripper = "OPEN" if teleop.gripper_open else "CLOSE"
-                line = f"TCP (m): {x:.3f}, {y:.3f}, {z:.3f}   K command: {gripper}"
-
-                mujoco.mjr_overlay(mujoco.mjtFontScale.mjFONTSCALE_150,
+                mujoco.mjr_overlay(mujoco.mjtFont.mjFONT_NORMAL,
                                     mujoco.mjtGridPos.mjGRID_TOPLEFT, viewport,
-                                    "Move W/S A/D Q/E | Rotate Z/X T/G C/V | K Grip | R Clear", line, context)
+                                    "Move TCP\nRotate TCP\nGripper\nTCP (m)\nJoint tags",
+                                    f"W/S X   A/D Y   Q/E Z\nZ/X X   T/G Y   C/V Z\n"
+                                    f"K {gripper}   R Clear   Esc Exit\n{x:.3f}, {y:.3f}, {z:.3f}\n"
+                                    "Starting pose examples", context)
+                gap_mm = "   ".join(f"{axis} {int(round(delta * 1000)):+d}" for axis, delta in zip("XYZ", gap))
+                mujoco.mjr_overlay(mujoco.mjtFont.mjFONT_NORMAL,
+                                    mujoco.mjtGridPos.mjGRID_TOPRIGHT, viewport,
+                                    f"Grasp gap (mm)\n{gap_mm}\n{detail}", "", context)
+                draw_grasp_cue(viewport, context, action, key)
                 glfw.swap_buffers(window)
                 rendered_frames += 1
             if duration is not None and time.monotonic() - opened_at >= duration:
